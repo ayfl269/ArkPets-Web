@@ -59,20 +59,15 @@
             }
         ];
 
-        window.arkpetsReady.then(arkpets => {
-            window.addEventListener('load', () => {
-                const randomIndex = Math.floor(Math.random() * CHARACTER_RESOURCES.length);
-                const character = new arkpets.Character(
-                    'arkpets-demo', 
-                    (e) => arkpets.showContextMenu(e, character, {
-                        getCharacterModels: () => CHARACTER_RESOURCES,
-                    }),
-                    CHARACTER_RESOURCES[randomIndex]
-                );
-                console.log("Character initialized", character);
-            });
-        }).catch(error => {
-            console.error("Failed to load ArkPets:", error);
+        window.addEventListener('load', () => {
+            const randomIndex = Math.floor(Math.random() * CHARACTER_RESOURCES.length);
+            const character = new arkpets.Character(
+                "arkpets", 
+                (e) => arkpets.showContextMenu(e, character, {
+                    getCharacterModels: () => CHARACTER_RESOURCES,
+                }),
+                CHARACTER_RESOURCES[randomIndex],
+            );
         });
     </script>
 </body>
