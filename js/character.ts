@@ -13,11 +13,45 @@ const MIN_VELOCITY = 5; // threshold for stopping
 const BOUNCE_DAMPING = 0.7; // energy loss on bounce
 
 // Canvas size in pixels (pixels in screen)
-const CANVAS_WIDTH = 150;
-const CANVAS_HEIGHT = 150;
+let CANVAS_WIDTH: number;
+let CANVAS_HEIGHT: number;
 
-const ANIMATION_NAMES = ["Relax", "Interact", "Move", "Sit" , "Sleep"];
+if (window.innerWidth <= 480) {
+    // 小屏幕设备（如手机）
+    CANVAS_WIDTH = Math.min(window.innerWidth * 0.9, 160);
+    CANVAS_HEIGHT = Math.min(window.innerHeight * 0.9, 160);
+} else {
+    // 大屏幕设备（如桌面）
+    CANVAS_WIDTH = Math.min(window.innerWidth * 0.9, 210);
+    CANVAS_HEIGHT = Math.min(window.innerHeight * 0.9, 210);
+}
+
+// 最小和最大缩放比例
+const minScale: number = 0.5;
+const maxScale: number = 2.0;
+
+const ANIMATION_NAMES = ["Relax", "Interact", "Move", "Sit" , "Sleep", "Special"];
 const ANIMATION_MARKOV = [
+    [0.5, 0.0, 0.2, 0.1, 0.1, 0.1],
+    [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [0.2, 0.0, 0.6, 0.0, 0.0, 0.2],
+    [0.3, 0.0, 0.0, 0.5, 0.0, 0.2],
+    [0.1, 0.0, 0.0, 0.0, 0.9, 0.0],
+    [0.4, 0.0, 0.4, 0.1, 0.1, 0.0], 
+]
+
+// Vehicle can't sit & sleep
+const ANIMATION_NAMES_VEHICLE = ["Relax", "Interact", "Move", "Special"];
+const ANIMATION_MARKOV_VEHICLE = [
+    [0.4, 0.0, 0.5, 0.1],
+    [1.0, 0.0, 0.0, 0.0],
+    [0.3, 0.0, 0.6, 0.1],
+    [0.5, 0.0, 0.5, 0.0],
+]
+
+// 新增：为没有Special动画的角色创建独立的动画链
+const ANIMATION_NAMES_NO_SPECIAL = ["Relax", "Interact", "Move", "Sit", "Sleep"];
+const ANIMATION_MARKOV_NO_SPECIAL = [
     [0.5, 0.0, 0.25, 0.15, 0.1],
     [1.0, 0.0, 0.0, 0.0, 0.0],
     [0.2, 0.0, 0.8, 0.0, 0.0],
@@ -25,9 +59,9 @@ const ANIMATION_MARKOV = [
     [0.1, 0.0, 0.0, 0.0, 0.9],
 ]
 
-// Vehicle can't sit & sleep
-const ANIMATION_NAMES_VEHICLE = ["Relax", "Interact", "Move"];
-const ANIMATION_MARKOV_VEHICLE = [
+// Vehicle且没有Special动画的情况
+const ANIMATION_NAMES_VEHICLE_NO_SPECIAL = ["Relax", "Interact", "Move"];
+const ANIMATION_MARKOV_VEHICLE_NO_SPECIAL = [
     [0.5, 0.0, 0.5],
     [1.0, 0.0, 0.0],
     [0.3, 0.0, 0.7],
@@ -89,17 +123,36 @@ export class Character {
 
     // Vehicle can't sit & sleep
     private isVehicle: boolean = false;
+    
+    // 新增：标记是否有Special动画
+    private hasSpecialAnimation: boolean = true;
 
     private allowInteract: boolean = true;
 
     // Supersampling is necessary for high-res display
     private pixelRatio!: number;
-
+    
+    // Event handler references for proper removal
+    private handleMouseMoveRef: (event: MouseEvent) => void;
+    private handleDragRef: (event: MouseEvent | TouchEvent) => void;
+    private handleDragEndRef: (event: MouseEvent | TouchEvent) => void;
+    private handleDragStartRef: (event: MouseEvent | TouchEvent) => void;
+    private handleCanvasClickRef: (event: MouseEvent) => void;
+    private onWindowResizeRef: () => void;
+    
     constructor(canvasId: string, onContextMenu: (e: MouseEvent | TouchEvent) => void, initialCharacter: CharacterModel, allowInteract: boolean = true) {
         this.allowInteract = allowInteract;
         this.model = initialCharacter;
         this.mvp = new webgl.Matrix4();
         this.pixelRatio = window.devicePixelRatio ?? 2;
+        
+        // Initialize event handler references
+        this.handleMouseMoveRef = this.handleMouseMove.bind(this);
+        this.handleDragRef = this.handleDrag.bind(this);
+        this.handleDragEndRef = this.handleDragEnd.bind(this);
+        this.handleDragStartRef = this.handleDragStart.bind(this);
+        this.handleCanvasClickRef = this.handleCanvasClick.bind(this);
+        this.onWindowResizeRef = this.onWindowResize.bind(this);
         
         // Initialize canvas and WebGL
         this.initializeCanvas(canvasId);
@@ -117,6 +170,9 @@ export class Character {
         this.canvas.id = canvasId;
         document.body.appendChild(this.canvas);
         this.canvas.style.pointerEvents = "none";
+        
+        // 添加窗口大小变化监听器
+        window.addEventListener('resize', this.onWindowResizeRef);
     }
 
     private initializeWebGL(): void {
@@ -144,24 +200,24 @@ export class Character {
 
     private setupEventListeners(onContextMenu: (e: MouseEvent | TouchEvent) => void): void {
         // Track mouse position to decide mouse over
-        document.addEventListener('mousemove', this.handleMouseMove.bind(this));
+        document.addEventListener('mousemove', this.handleMouseMoveRef);
 
         if (this.allowInteract) {
             // React to click events
-            this.canvas.addEventListener('click', this.handleCanvasClick.bind(this));
+            this.canvas.addEventListener('click', this.handleCanvasClickRef);
 
             // Context menu
             this.canvas.addEventListener('contextmenu', onContextMenu);
 
             // Mouse events
-            this.canvas.addEventListener('mousedown', this.handleDragStart.bind(this));
-            document.addEventListener('mousemove', this.handleDrag.bind(this));
-            document.addEventListener('mouseup', this.handleDragEnd.bind(this));
+            this.canvas.addEventListener('mousedown', this.handleDragStartRef);
+            document.addEventListener('mousemove', this.handleDragRef);
+            document.addEventListener('mouseup', this.handleDragEndRef);
             
             // Touch events
-            this.canvas.addEventListener('touchstart', this.handleDragStart.bind(this));
-            document.addEventListener('touchmove', this.handleDrag.bind(this));
-            document.addEventListener('touchend', this.handleDragEnd.bind(this));
+            this.canvas.addEventListener('touchstart', this.handleDragStartRef);
+            document.addEventListener('touchmove', this.handleDragRef);
+            document.addEventListener('touchend', this.handleDragEndRef);
         }
     }
 
@@ -201,22 +257,26 @@ export class Character {
         this.gl.shaderSource(fragmentShader, outlineFragmentShader);
         this.gl.compileShader(fragmentShader);
 
-        // Compile shaders
-        this.gl.compileShader(vertexShader);
+        // Check compilation status
         if (!this.gl.getShaderParameter(vertexShader, this.gl.COMPILE_STATUS)) {
             console.error('Vertex shader compilation failed:', this.gl.getShaderInfoLog(vertexShader));
         }
-        this.gl.compileShader(fragmentShader);
         if (!this.gl.getShaderParameter(fragmentShader, this.gl.COMPILE_STATUS)) {
             console.error('Fragment shader compilation failed:', this.gl.getShaderInfoLog(fragmentShader));
         }
+        
         this.outlineShader = this.gl.createProgram()!;
         this.gl.attachShader(this.outlineShader, vertexShader);
         this.gl.attachShader(this.outlineShader, fragmentShader);
         this.gl.linkProgram(this.outlineShader);
+        
         if (!this.gl.getProgramParameter(this.outlineShader, this.gl.LINK_STATUS)) {
             console.error('Program linking failed:', this.gl.getProgramInfoLog(this.outlineShader));
         }
+        
+        // Clean up shaders as they're now part of the program
+        this.gl.deleteShader(vertexShader);
+        this.gl.deleteShader(fragmentShader);
     }
 
     public loadCharacterModel(model: CharacterModel) {
@@ -299,7 +359,7 @@ export class Character {
 
     private load(): void {
         if (this.assetManager.isLoadingComplete()) {
-            this.character = this.loadCharacter(this.model, 0.3 * 0.75 * this.pixelRatio);
+            this.character = this.loadCharacter(this.model, 0.3 * 1 * this.pixelRatio);
 
             if (!this.getAnimationNames().includes(this.currentAction.animation)) {
                 // If swithing from character to vehicle, make sure it's not in `Sleep` or `Sit`
@@ -335,6 +395,9 @@ export class Character {
         if (!skeletonData.findAnimation("Sit") || !skeletonData.findAnimation("Sleep")) {
             this.isVehicle = true;
         }
+        
+        // 检查是否有Special动画
+        this.hasSpecialAnimation = !!skeletonData.findAnimation("Special");
 
         const animationStateData = new spine.AnimationStateData(skeleton.data);
 
@@ -362,17 +425,8 @@ export class Character {
         }
         animationState.addListener(new AnimationStateAdapter());
 
-        // Set canvas display size
-        this.canvas.style.width = CANVAS_WIDTH + "px";
-        this.canvas.style.height = CANVAS_HEIGHT + "px";
-
-        // Set canvas internal resolution
-        this.canvas.width = CANVAS_WIDTH * this.pixelRatio;
-        this.canvas.height = CANVAS_HEIGHT * this.pixelRatio;
-        
-        // Update the projection matrix to match the new resolution
-        this.mvp.ortho2d(0, 0, this.canvas.width, this.canvas.height);
-        this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        // 计算自适应的画布大小
+        this.updateCanvasSize();
 
         // Scale up the skeleton position to match the higher resolution
         skeleton.x = this.canvas.width / 2;
@@ -669,14 +723,18 @@ export class Character {
         }
 
         // Remove event listeners
-        this.canvas.removeEventListener('click', this.handleCanvasClick.bind(this));
-        this.canvas.removeEventListener('mousedown', this.handleDragStart.bind(this));
-        document.removeEventListener('mousemove', this.handleMouseMove.bind(this));
-        document.removeEventListener('mousemove', this.handleDrag.bind(this));
-        document.removeEventListener('mouseup', this.handleDragEnd.bind(this));
-        this.canvas.removeEventListener('touchstart', this.handleDragStart.bind(this));
-        document.removeEventListener('touchmove', this.handleDrag.bind(this));
-        document.removeEventListener('touchend', this.handleDragEnd.bind(this));
+        document.removeEventListener('mousemove', this.handleMouseMoveRef);
+        window.removeEventListener('resize', this.onWindowResizeRef);
+        
+        if (this.allowInteract) {
+            this.canvas.removeEventListener('click', this.handleCanvasClickRef);
+            this.canvas.removeEventListener('mousedown', this.handleDragStartRef);
+            document.removeEventListener('mousemove', this.handleDragRef);
+            document.removeEventListener('mouseup', this.handleDragEndRef);
+            this.canvas.removeEventListener('touchstart', this.handleDragStartRef);
+            document.removeEventListener('touchmove', this.handleDragRef);
+            document.removeEventListener('touchend', this.handleDragEndRef);
+        }
 
         // Clean up Spine resources
         if (this.character) {
@@ -685,10 +743,7 @@ export class Character {
         }
         
         // Delete WebGL resources
-        this.gl.deleteFramebuffer(this.framebuffer);
-        this.gl.deleteTexture(this.framebufferTexture);
-        this.gl.deleteBuffer(this.quadBuffer);
-        this.gl.deleteProgram(this.outlineShader);
+        this.releaseWebGLResources();
         
         // Clear session storage
         sessionStorage.removeItem('arkpets-character-' + this.canvas.id);
@@ -702,11 +757,47 @@ export class Character {
     }
 
     public getAnimationNames(): string[] {
-        return this.isVehicle ? ANIMATION_NAMES_VEHICLE : ANIMATION_NAMES;
+        // 如果是vehicle类型
+        if (this.isVehicle) {
+            // 如果有Special动画
+            if (this.hasSpecialAnimation) {
+                return ANIMATION_NAMES_VEHICLE;
+            } else {
+                // 如果没有Special动画
+                return ANIMATION_NAMES_VEHICLE_NO_SPECIAL;
+            }
+        } else {
+            // 如果不是vehicle类型
+            // 如果有Special动画
+            if (this.hasSpecialAnimation) {
+                return ANIMATION_NAMES;
+            } else {
+                // 如果没有Special动画
+                return ANIMATION_NAMES_NO_SPECIAL;
+            }
+        }
     }
 
     private getAnimationMarkov(): number[][] {
-        return this.isVehicle ? ANIMATION_MARKOV_VEHICLE : ANIMATION_MARKOV;
+        // 根据是否为vehicle和是否有Special动画选择对应的转移矩阵
+        if (this.isVehicle) {
+            // 如果有Special动画
+            if (this.hasSpecialAnimation) {
+                return ANIMATION_MARKOV_VEHICLE;
+            } else {
+                // 如果没有Special动画
+                return ANIMATION_MARKOV_VEHICLE_NO_SPECIAL;
+            }
+        } else {
+            // 如果不是vehicle类型
+            // 如果有Special动画
+            if (this.hasSpecialAnimation) {
+                return ANIMATION_MARKOV;
+            } else {
+                // 如果没有Special动画
+                return ANIMATION_MARKOV_NO_SPECIAL;
+            }
+        }
     }
 
     public playAnimation(animationName: string): void {
@@ -733,5 +824,94 @@ export class Character {
 
     public setAllowInteract(allowInteract: boolean): void {
         this.allowInteract = allowInteract;
+    }
+
+    /**
+     * 根据窗口大小和设备像素比更新画布大小
+     * 实现高分辨率屏幕适配并保持宽高比
+     */
+    private updateCanvasSize(): void {
+        const { innerWidth, innerHeight, devicePixelRatio } = window;
+        this.pixelRatio = devicePixelRatio || 1;
+
+        // 计算基础尺寸（基于窗口大小和原始画布比例）
+        const aspectRatio = CANVAS_WIDTH / CANVAS_HEIGHT;
+        
+        // 计算适应窗口的最佳尺寸
+        let bestWidth = innerWidth;
+        let bestHeight = innerHeight;
+        
+        if (innerWidth / innerHeight > aspectRatio) {
+            // 窗口更宽，以高度为准
+            bestHeight = innerHeight * 0.8;
+            bestWidth = bestHeight * aspectRatio;
+        } else {
+            // 窗口更高，以宽度为准
+            bestWidth = innerWidth * 0.8;
+            bestHeight = bestWidth / aspectRatio;
+        }
+        
+        // 应用缩放限制（确保在minScale和maxScale之间）
+        const scale = Math.max(minScale, Math.min(maxScale, Math.min(bestWidth / CANVAS_WIDTH, bestHeight / CANVAS_HEIGHT)));
+        const finalWidth = CANVAS_WIDTH * scale;
+        const finalHeight = CANVAS_HEIGHT * scale;
+
+        // 设置画布显示尺寸
+        this.canvas.style.width = `${finalWidth}px`;
+        this.canvas.style.height = `${finalHeight}px`;
+        
+        // 设置画布内部分辨率（考虑设备像素比）
+        this.canvas.width = finalWidth * this.pixelRatio;
+        this.canvas.height = finalHeight * this.pixelRatio;
+        
+        // 更新投影矩阵和WebGL视口
+        this.mvp.ortho2d(0, 0, this.canvas.width, this.canvas.height);
+        this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    }
+
+    /**
+     * 窗口大小变化事件处理函数
+     */
+    private onWindowResize(): void {
+        // 动态调整画布大小
+        this.updateCanvasSize();
+        
+        // 只更新framebuffer纹理大小，不重新创建整个framebuffer
+        this.gl.bindTexture(this.gl.TEXTURE_2D, this.framebufferTexture);
+        this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.canvas.width, this.canvas.height, 0, this.gl.RGBA, this.gl.UNSIGNED_BYTE, null);
+        
+        // 更新角色位置以适应新尺寸
+        this.position.x = Math.min(this.position.x, window.innerWidth - this.canvas.offsetWidth);
+        this.position.y = Math.min(this.position.y, window.innerHeight - this.canvas.offsetHeight);
+        
+        // 更新骨架位置和投影矩阵
+        if (this.character && this.character.skeleton) {
+            this.character.skeleton.x = this.canvas.width / 2;
+            this.character.skeleton.y = 0;
+            // 更新投影矩阵
+            this.mvp.ortho2d(0, 0, this.canvas.width, this.canvas.height);
+        }
+    }
+
+    /**
+     * 释放WebGL资源
+     */
+    private releaseWebGLResources(): void {
+        if (this.framebuffer) {
+            this.gl.deleteFramebuffer(this.framebuffer);
+            this.framebuffer = null as any;
+        }
+        if (this.framebufferTexture) {
+            this.gl.deleteTexture(this.framebufferTexture);
+            this.framebufferTexture = null as any;
+        }
+        if (this.quadBuffer) {
+            this.gl.deleteBuffer(this.quadBuffer);
+            this.quadBuffer = null as any;
+        }
+        if (this.outlineShader) {
+            this.gl.deleteProgram(this.outlineShader);
+            this.outlineShader = null as any;
+        }
     }
 }
