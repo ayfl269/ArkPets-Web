@@ -50,40 +50,29 @@
                 resourcePath: RESOURCE_PATH,
             },
             {
-                id: "whitw2",
-                name: "荒芜拉普兰德",
-                skeleton: "1038_whitw2/build_char_1038_whitw2.skel", 
-                atlas: "1038_whitw2/build_char_1038_whitw2.atlas",
-                texture: "1038_whitw2/build_char_1038_whitw2.png",
+                id: "lisa_epoque",
+                name: "铃兰-雪霁",
+                skeleton: "358_lisa_epoque#22/build_char_358_lisa_epoque#22.skel",
+                atlas: "358_lisa_epoque#22/build_char_358_lisa_epoque#22.atlas",
+                texture: "358_lisa_epoque#22/build_char_358_lisa_epoque#22.png",
                 resourcePath: RESOURCE_PATH,
-            },
-            {
-                id: "frston-3",
-                name: "Friston-3",
-                skeleton: "4093_frston/build_char_4093_frston.skel",
-                atlas: "4093_frston/build_char_4093_frston.atlas", 
-                texture: "4093_frston/build_char_4093_frston.png",
-                resourcePath: RESOURCE_PATH,
-            },
-            {
-                id: "texas2",
-                name: "缄默德克萨斯",
-                skeleton: "1028_texas2_iteration#1/build_char_1028_texas2_iteration#1.skel",
-                atlas: "1028_texas2_iteration#1/build_char_1028_texas2_iteration#1.atlas",
-                texture: "1028_texas2_iteration#1/build_char_1028_texas2_iteration#1.png",
-                resourcePath: "https://raw.githubusercontent.com/isHarryh/Ark-Models/refs/heads/main/models/",
             }
         ];
 
-        window.addEventListener('load', () => {
-            const character = new arkpets.Character(
-                "arkpets-demo", 
-                (e) => arkpets.showContextMenu(e, character, {
-                    getCharacterModels: () => CHARACTER_RESOURCES,
-                }),
-                CHARACTER_RESOURCES[0],
-            );
-            console.log("Character initialized", character);
+        window.arkpetsReady.then(arkpets => {
+            window.addEventListener('load', () => {
+                const randomIndex = Math.floor(Math.random() * CHARACTER_RESOURCES.length);
+                const character = new arkpets.Character(
+                    'arkpets-demo', 
+                    (e) => arkpets.showContextMenu(e, character, {
+                        getCharacterModels: () => CHARACTER_RESOURCES,
+                    }),
+                    CHARACTER_RESOURCES[randomIndex]
+                );
+                console.log("Character initialized", character);
+            });
+        }).catch(error => {
+            console.error("Failed to load ArkPets:", error);
         });
     </script>
 </body>

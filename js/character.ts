@@ -17,16 +17,16 @@ let CANVAS_WIDTH: number;
 let CANVAS_HEIGHT: number;
 
 if (window.innerWidth <= 480) {
-    // 小屏幕设备（如手机）
+    // Small screen devices (such as mobile phones)
     CANVAS_WIDTH = Math.min(window.innerWidth * 0.9, 160);
     CANVAS_HEIGHT = Math.min(window.innerHeight * 0.9, 160);
 } else {
-    // 大屏幕设备（如桌面）
+    // Large screen devices (such as desktop)
     CANVAS_WIDTH = Math.min(window.innerWidth * 0.9, 210);
     CANVAS_HEIGHT = Math.min(window.innerHeight * 0.9, 210);
 }
 
-// 最小和最大缩放比例
+// Minimum and maximum scale factors
 const minScale: number = 0.5;
 const maxScale: number = 2.0;
 
@@ -49,7 +49,7 @@ const ANIMATION_MARKOV_VEHICLE = [
     [0.5, 0.0, 0.5, 0.0],
 ]
 
-// 新增：为没有Special动画的角色创建独立的动画链
+// Added: Create separate animation chain for characters without Special animation
 const ANIMATION_NAMES_NO_SPECIAL = ["Relax", "Interact", "Move", "Sit", "Sleep"];
 const ANIMATION_MARKOV_NO_SPECIAL = [
     [0.5, 0.0, 0.25, 0.15, 0.1],
@@ -59,7 +59,7 @@ const ANIMATION_MARKOV_NO_SPECIAL = [
     [0.1, 0.0, 0.0, 0.0, 0.9],
 ]
 
-// Vehicle且没有Special动画的情况
+// Vehicle without Special animation
 const ANIMATION_NAMES_VEHICLE_NO_SPECIAL = ["Relax", "Interact", "Move"];
 const ANIMATION_MARKOV_VEHICLE_NO_SPECIAL = [
     [0.5, 0.0, 0.5],
@@ -124,7 +124,7 @@ export class Character {
     // Vehicle can't sit & sleep
     private isVehicle: boolean = false;
     
-    // 新增：标记是否有Special动画
+    // Added: Mark whether it has Special animation
     private hasSpecialAnimation: boolean = true;
 
     private allowInteract: boolean = true;
@@ -171,7 +171,7 @@ export class Character {
         document.body.appendChild(this.canvas);
         this.canvas.style.pointerEvents = "none";
         
-        // 添加窗口大小变化监听器
+        // Add window resize listener
         window.addEventListener('resize', this.onWindowResizeRef);
     }
 
@@ -361,8 +361,8 @@ export class Character {
         if (this.assetManager.isLoadingComplete()) {
             this.character = this.loadCharacter(this.model, 0.3 * 1 * this.pixelRatio);
 
-            if (!this.getAnimationNames().includes(this.currentAction.animation)) {
-                // If swithing from character to vehicle, make sure it's not in `Sleep` or `Sit`
+            if (this.getAnimationNames().indexOf(this.currentAction.animation) === -1) {
+                // If switching from character to vehicle, make sure it's not in `Sleep` or `Sit`
                 this.currentAction.animation = "Relax";
                 this.currentAction.timestamp = 0;
             }
@@ -396,7 +396,7 @@ export class Character {
             this.isVehicle = true;
         }
         
-        // 检查是否有Special动画
+        // Check if has Special animation
         this.hasSpecialAnimation = !!skeletonData.findAnimation("Special");
 
         const animationStateData = new spine.AnimationStateData(skeleton.data);
@@ -425,7 +425,7 @@ export class Character {
         }
         animationState.addListener(new AnimationStateAdapter());
 
-        // 计算自适应的画布大小
+        // Calculate adaptive canvas size
         this.updateCanvasSize();
 
         // Scale up the skeleton position to match the higher resolution
@@ -757,44 +757,44 @@ export class Character {
     }
 
     public getAnimationNames(): string[] {
-        // 如果是vehicle类型
+        // If it's a vehicle type
         if (this.isVehicle) {
-            // 如果有Special动画
+            // If it has Special animation
             if (this.hasSpecialAnimation) {
                 return ANIMATION_NAMES_VEHICLE;
             } else {
-                // 如果没有Special动画
+                // If it doesn't have Special animation
                 return ANIMATION_NAMES_VEHICLE_NO_SPECIAL;
             }
         } else {
-            // 如果不是vehicle类型
-            // 如果有Special动画
+            // If it's not a vehicle type
+            // If it has Special animation
             if (this.hasSpecialAnimation) {
                 return ANIMATION_NAMES;
             } else {
-                // 如果没有Special动画
+                // If it doesn't have Special animation
                 return ANIMATION_NAMES_NO_SPECIAL;
             }
         }
     }
 
     private getAnimationMarkov(): number[][] {
-        // 根据是否为vehicle和是否有Special动画选择对应的转移矩阵
+        // Select corresponding transition matrix based on whether it's a vehicle and whether it has Special animation
         if (this.isVehicle) {
-            // 如果有Special动画
+            // If it has Special animation
             if (this.hasSpecialAnimation) {
                 return ANIMATION_MARKOV_VEHICLE;
             } else {
-                // 如果没有Special动画
+                // If it doesn't have Special animation
                 return ANIMATION_MARKOV_VEHICLE_NO_SPECIAL;
             }
         } else {
-            // 如果不是vehicle类型
-            // 如果有Special动画
+            // If it's not a vehicle type
+            // If it has Special animation
             if (this.hasSpecialAnimation) {
                 return ANIMATION_MARKOV;
             } else {
-                // 如果没有Special动画
+                // If it doesn't have Special animation
                 return ANIMATION_MARKOV_NO_SPECIAL;
             }
         }
@@ -827,74 +827,74 @@ export class Character {
     }
 
     /**
-     * 根据窗口大小和设备像素比更新画布大小
-     * 实现高分辨率屏幕适配并保持宽高比
+     * Update canvas size based on window size and device pixel ratio
+     * Implement high-resolution screen adaptation and maintain aspect ratio
      */
     private updateCanvasSize(): void {
         const { innerWidth, innerHeight, devicePixelRatio } = window;
         this.pixelRatio = devicePixelRatio || 1;
 
-        // 计算基础尺寸（基于窗口大小和原始画布比例）
+        // Calculate base size (based on window size and original canvas aspect ratio)
         const aspectRatio = CANVAS_WIDTH / CANVAS_HEIGHT;
         
-        // 计算适应窗口的最佳尺寸
+        // Calculate best size to fit window
         let bestWidth = innerWidth;
         let bestHeight = innerHeight;
         
         if (innerWidth / innerHeight > aspectRatio) {
-            // 窗口更宽，以高度为准
+            // Window is wider, use height as reference
             bestHeight = innerHeight * 0.8;
             bestWidth = bestHeight * aspectRatio;
         } else {
-            // 窗口更高，以宽度为准
+            // Window is taller, use width as reference
             bestWidth = innerWidth * 0.8;
             bestHeight = bestWidth / aspectRatio;
         }
         
-        // 应用缩放限制（确保在minScale和maxScale之间）
+        // Apply scale limits (ensure between minScale and maxScale)
         const scale = Math.max(minScale, Math.min(maxScale, Math.min(bestWidth / CANVAS_WIDTH, bestHeight / CANVAS_HEIGHT)));
         const finalWidth = CANVAS_WIDTH * scale;
         const finalHeight = CANVAS_HEIGHT * scale;
 
-        // 设置画布显示尺寸
+        // Set canvas display size
         this.canvas.style.width = `${finalWidth}px`;
         this.canvas.style.height = `${finalHeight}px`;
         
-        // 设置画布内部分辨率（考虑设备像素比）
+        // Set canvas internal resolution (consider device pixel ratio)
         this.canvas.width = finalWidth * this.pixelRatio;
         this.canvas.height = finalHeight * this.pixelRatio;
         
-        // 更新投影矩阵和WebGL视口
+        // Update projection matrix and WebGL viewport
         this.mvp.ortho2d(0, 0, this.canvas.width, this.canvas.height);
         this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     }
 
     /**
-     * 窗口大小变化事件处理函数
+     * Window resize event handler
      */
     private onWindowResize(): void {
-        // 动态调整画布大小
+        // Dynamically adjust canvas size
         this.updateCanvasSize();
         
-        // 只更新framebuffer纹理大小，不重新创建整个framebuffer
+        // Only update framebuffer texture size, not recreate the entire framebuffer
         this.gl.bindTexture(this.gl.TEXTURE_2D, this.framebufferTexture);
         this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.canvas.width, this.canvas.height, 0, this.gl.RGBA, this.gl.UNSIGNED_BYTE, null);
         
-        // 更新角色位置以适应新尺寸
+        // Update character position to fit new dimensions
         this.position.x = Math.min(this.position.x, window.innerWidth - this.canvas.offsetWidth);
         this.position.y = Math.min(this.position.y, window.innerHeight - this.canvas.offsetHeight);
         
-        // 更新骨架位置和投影矩阵
+        // Update skeleton position and projection matrix
         if (this.character && this.character.skeleton) {
             this.character.skeleton.x = this.canvas.width / 2;
             this.character.skeleton.y = 0;
-            // 更新投影矩阵
+            // Update projection matrix
             this.mvp.ortho2d(0, 0, this.canvas.width, this.canvas.height);
         }
     }
 
     /**
-     * 释放WebGL资源
+     * Release WebGL resources
      */
     private releaseWebGLResources(): void {
         if (this.framebuffer) {
