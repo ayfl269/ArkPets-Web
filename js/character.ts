@@ -12,19 +12,13 @@ const MAX_VELOCITY = 1000; // maximum velocity in pixels per second
 const MIN_VELOCITY = 5; // threshold for stopping
 const BOUNCE_DAMPING = 0.7; // energy loss on bounce
 
-// Canvas size in pixels (pixels in screen)
-let CANVAS_WIDTH: number;
-let CANVAS_HEIGHT: number;
-
-if (window.innerWidth <= 480) {
-    // Small screen devices (such as mobile phones)
-    CANVAS_WIDTH = Math.min(window.innerWidth * 0.9, 160);
-    CANVAS_HEIGHT = Math.min(window.innerHeight * 0.9, 160);
-} else {
-    // Large screen devices (such as desktop)
-    CANVAS_WIDTH = Math.min(window.innerWidth * 0.9, 210);
-    CANVAS_HEIGHT = Math.min(window.innerHeight * 0.9, 210);
-}
+// Screen size breakpoints and corresponding canvas base sizes
+const SCREEN_CONFIG = {
+    MOBILE_BREAKPOINT: 480,
+    MOBILE_BASE_SIZE: 160,
+    DESKTOP_BASE_SIZE: 210,
+    VIEWPORT_RATIO: 0.9
+};
 
 // Minimum and maximum scale factors
 const minScale: number = 0.5;
@@ -879,11 +873,17 @@ export class Character {
      * Implement high-resolution screen adaptation and maintain aspect ratio
      */
     private updateCanvasSize(): void {
-        const { innerWidth, innerHeight, devicePixelRatio } = window;
-        this.pixelRatio = devicePixelRatio || 1;
-
-        // Calculate base size (based on window size and original canvas aspect ratio)
-        const aspectRatio = CANVAS_WIDTH / CANVAS_HEIGHT;
+        const { innerWidth, innerHeight } = window;
+        
+        // Dynamically calculate base size based on current window dimensions
+        const isMobile = innerWidth <= SCREEN_CONFIG.MOBILE_BREAKPOINT;
+        const maxBaseSize = isMobile ? SCREEN_CONFIG.MOBILE_BASE_SIZE : SCREEN_CONFIG.DESKTOP_BASE_SIZE;
+        
+        const baseWidth = Math.min(innerWidth * SCREEN_CONFIG.VIEWPORT_RATIO, maxBaseSize);
+        const baseHeight = Math.min(innerHeight * SCREEN_CONFIG.VIEWPORT_RATIO, maxBaseSize);
+        
+        // In this project, baseWidth and baseHeight are usually the same (square)
+        const aspectRatio = baseWidth / baseHeight;
         
         // Calculate best size to fit window
         let bestWidth = innerWidth;
@@ -900,9 +900,9 @@ export class Character {
         }
         
         // Apply scale limits (ensure between minScale and maxScale)
-        const scale = Math.max(minScale, Math.min(maxScale, Math.min(bestWidth / CANVAS_WIDTH, bestHeight / CANVAS_HEIGHT)));
-        const finalWidth = CANVAS_WIDTH * scale;
-        const finalHeight = CANVAS_HEIGHT * scale;
+        const scale = Math.max(minScale, Math.min(maxScale, Math.min(bestWidth / baseWidth, bestHeight / baseHeight)));
+        const finalWidth = baseWidth * scale;
+        const finalHeight = baseHeight * scale;
 
         // Set canvas display size
         this.canvas.style.width = `${finalWidth}px`;
