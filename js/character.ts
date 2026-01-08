@@ -201,10 +201,7 @@ export class Character {
 
         // Clean up WebGL resources
         if (this.gl) {
-            this.gl.deleteFramebuffer(this.framebuffer);
-            this.gl.deleteTexture(this.framebufferTexture);
-            this.gl.deleteProgram(this.outlineShader);
-            this.gl.deleteBuffer(this.quadBuffer);
+            this.releaseWebGLResources();
         }
 
         // Clear session storage if needed (optional, but keep it for completeness if requested)
