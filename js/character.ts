@@ -139,6 +139,7 @@ export class Character {
     private handleDragStartRef: (event: MouseEvent | TouchEvent) => void;
     private handleCanvasClickRef: (event: MouseEvent) => void;
     private onWindowResizeRef: () => void;
+    private onBeforeUnloadRef: () => void;
     
     constructor(canvasId: string, onContextMenu: (e: MouseEvent | TouchEvent) => void, initialCharacter: CharacterModel, allowInteract: boolean = true) {
         this.allowInteract = allowInteract;
@@ -153,6 +154,11 @@ export class Character {
         this.handleDragStartRef = this.handleDragStart.bind(this);
         this.handleCanvasClickRef = this.handleCanvasClick.bind(this);
         this.onWindowResizeRef = this.onWindowResize.bind(this);
+        this.onBeforeUnloadRef = () => {
+            // Force save on page unload
+            this.lastSaveTime = 0; 
+            this.saveToSessionStorage();
+        };
         
         // Initialize canvas and WebGL
         this.initializeCanvas(canvasId);
@@ -162,6 +168,58 @@ export class Character {
         // Load initial character
         this.loadFromSessionStorage();
         this.loadCharacterModel(this.model);
+
+        window.addEventListener('beforeunload', this.onBeforeUnloadRef);
+    }
+
+    public destroy(): void {
+        // Stop animation
+        if (this.animationFrameId !== null) {
+            cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = null;
+        }
+
+        // Remove event listeners
+        document.removeEventListener('mousemove', this.handleMouseMoveRef);
+        document.removeEventListener('mousemove', this.handleDragRef);
+        document.removeEventListener('mouseup', this.handleDragEndRef);
+        document.removeEventListener('touchmove', this.handleDragRef);
+        document.removeEventListener('touchend', this.handleDragEndRef);
+        window.removeEventListener('resize', this.onWindowResizeRef);
+        window.removeEventListener('beforeunload', this.onBeforeUnloadRef);
+
+        if (this.canvas) {
+            this.canvas.removeEventListener('click', this.handleCanvasClickRef);
+            this.canvas.removeEventListener('mousedown', this.handleDragStartRef);
+            this.canvas.removeEventListener('touchstart', this.handleDragStartRef);
+            
+            // Remove canvas from DOM
+            if (this.canvas.parentNode) {
+                this.canvas.parentNode.removeChild(this.canvas);
+            }
+        }
+
+        // Clean up Spine resources
+        if (this.character && this.character.state) {
+            this.character.state.clearTracks();
+            this.character.state.clearListeners();
+        }
+
+        // Clean up WebGL resources
+        if (this.gl) {
+            this.gl.deleteFramebuffer(this.framebuffer);
+            this.gl.deleteTexture(this.framebufferTexture);
+            this.gl.deleteProgram(this.outlineShader);
+            this.gl.deleteBuffer(this.quadBuffer);
+        }
+
+        // Clear session storage if needed (optional, but keep it for completeness if requested)
+        // sessionStorage.removeItem('arkpets-character-' + this.canvas.id);
+
+        // Clear asset manager
+        if (this.assetManager) {
+            this.assetManager.dispose();
+        }
     }
 
     private initializeCanvas(canvasId: string): void {
@@ -279,7 +337,7 @@ export class Character {
         this.gl.deleteShader(fragmentShader);
     }
 
-    public loadCharacterModel(model: CharacterModel) {
+    public async loadCharacterModel(model: CharacterModel) {
         this.model = model;
         
         function encodeUriPath(path: string): string {
@@ -287,40 +345,46 @@ export class Character {
         }
         console.log("Downloading character assets for", model.name);
 
-        // Download all resources.
-        // Here we use `setRawDataURI()` to manually load the resources because the path may contain `#` which is not allowed in URLs
         const resources = [model.skeleton, model.atlas, model.texture];
         const basePath = model.resourcePath ?? "";
-        Promise.all(resources.map(async resource => {
-            const response = await fetch(basePath + encodeUriPath(resource));
-            const blob = await response.blob();
-            const reader = new FileReader();
-            return new Promise<string>(resolve => {
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.readAsDataURL(blob);
-            });
-        })).then(dataUrls => {
+        
+        try {
+            const objectUrls = await Promise.all(resources.map(async resource => {
+                const response = await fetch(basePath + encodeUriPath(resource));
+                if (!response.ok) throw new Error(`Failed to fetch ${resource}: ${response.statusText}`);
+                const blob = await response.blob();
+                return URL.createObjectURL(blob);
+            }));
+
             resources.forEach((resource, i) => {
-                this.assetManager.setRawDataURI(resource, dataUrls[i]);
+                this.assetManager.setRawDataURI(resource, objectUrls[i]);
             });
 
             this.assetManager.removeAll();
-            this.assetManager.loadBinary(model.skeleton, () => {
-                this.assetManager.loadTextureAtlas(model.atlas, () => {
-                    console.log("Loaded character assets for", model.name);
-                    resources.forEach((resource) => {
-                        this.assetManager.setRawDataURI(resource, ""); // release memory
-                    });
-                    requestAnimationFrame(this.load.bind(this));
-                });
+            
+            // Load skeleton and atlas
+            await new Promise<void>((resolve, reject) => {
+                this.assetManager.loadBinary(model.skeleton, () => {
+                    this.assetManager.loadTextureAtlas(model.atlas, () => {
+                        console.log("Loaded character assets for", model.name);
+                        // Cleanup object URLs and raw data URIs
+                        resources.forEach((resource, i) => {
+                            URL.revokeObjectURL(objectUrls[i]);
+                            this.assetManager.setRawDataURI(resource, ""); 
+                        });
+                        resolve();
+                    }, (error) => reject(new Error(`Failed to load atlas: ${error}`)));
+                }, (error) => reject(new Error(`Failed to load skeleton: ${error}`)));
             });
-        }).catch(error => {
-            console.error("Failed to load character assets:", error);
-        });
 
-        if (this.animationFrameId !== null) {
-            cancelAnimationFrame(this.animationFrameId);
-            this.animationFrameId = null;
+            if (this.animationFrameId !== null) {
+                cancelAnimationFrame(this.animationFrameId);
+                this.animationFrameId = null;
+            }
+            requestAnimationFrame(this.load.bind(this));
+
+        } catch (error) {
+            console.error("Failed to load character assets:", error);
         }
     }
 
@@ -339,7 +403,16 @@ export class Character {
         });
     }
 
+    private lastSaveTime: number = 0;
+    private readonly SAVE_INTERVAL = 1000; // 1 second
+
     private saveToSessionStorage(): void {
+        const now = Date.now();
+        if (now - this.lastSaveTime < this.SAVE_INTERVAL) {
+            return;
+        }
+        this.lastSaveTime = now;
+
         sessionStorage.setItem('arkpets-character-' + this.canvas.id, JSON.stringify({
             position: this.position,
             currentAction: this.currentAction,
@@ -450,7 +523,14 @@ export class Character {
         this.currentMousePos.y = event.clientY;
     }
 
+    private frameCount: number = 0;
+    private readonly HIT_TEST_INTERVAL = 5; // Check every 5 frames
+
+    private lastMouseX: number = -1;
+    private lastMouseY: number = -1;
+
     private render(): void {
+        this.frameCount++;
         const now = Date.now() / 1000;
         const delta = now - this.lastFrameTime;
         this.lastFrameTime = now;
@@ -549,29 +629,37 @@ export class Character {
         this.shader.unbind();
 
         // Read pixels before 2nd pass to determine if mouse is over character
-        const canvasRect = this.canvas.getBoundingClientRect();
-        let pixelX = (this.currentMousePos.x - canvasRect.x) * this.pixelRatio;
-        let pixelY = this.canvas.height - (this.currentMousePos.y - canvasRect.y) * this.pixelRatio;
-        if (pixelX >= 0 && pixelX < this.canvas.width && pixelY >= 0 && pixelY < this.canvas.height) {
-            // Mouse inside canvas. Check whether it's over the character
-            let pixelColor = new Uint8Array(4);
-            this.gl.readPixels(
-                pixelX, 
-                pixelY, 
-                1, 1, 
-                this.gl.RGBA, 
-                this.gl.UNSIGNED_BYTE, 
-                pixelColor
-            );
-            this.isMouseOver = pixelColor[3] !== 0;
-            if (this.allowInteract) {
-                this.canvas.style.pointerEvents = this.isMouseOver ? 'auto' : 'none';
+        // Throttle hit testing and only check if mouse moved or character moved
+        const mouseMoved = this.currentMousePos.x !== this.lastMouseX || this.currentMousePos.y !== this.lastMouseY;
+        if (this.frameCount % this.HIT_TEST_INTERVAL === 0 || mouseMoved) {
+            this.lastMouseX = this.currentMousePos.x;
+            this.lastMouseY = this.currentMousePos.y;
+
+            const canvasRect = this.canvas.getBoundingClientRect();
+            let pixelX = (this.currentMousePos.x - canvasRect.x) * this.pixelRatio;
+            let pixelY = this.canvas.height - (this.currentMousePos.y - canvasRect.y) * this.pixelRatio;
+            
+            if (pixelX >= 0 && pixelX < this.canvas.width && pixelY >= 0 && pixelY < this.canvas.height) {
+                // Mouse inside canvas. Check whether it's over the character
+                let pixelColor = new Uint8Array(4);
+                this.gl.readPixels(
+                    pixelX, 
+                    pixelY, 
+                    1, 1, 
+                    this.gl.RGBA, 
+                    this.gl.UNSIGNED_BYTE, 
+                    pixelColor
+                );
+                this.isMouseOver = pixelColor[3] !== 0;
+                if (this.allowInteract) {
+                    this.canvas.style.pointerEvents = this.isMouseOver ? 'auto' : 'none';
+                } else {
+                    this.canvas.style.pointerEvents = 'none';
+                }
             } else {
+                this.isMouseOver = false;
                 this.canvas.style.pointerEvents = 'none';
             }
-        } else {
-            this.isMouseOver = false;
-            this.canvas.style.pointerEvents = 'none';
         }
 
         // 2nd pass - render to screen with outline effect
@@ -714,46 +802,6 @@ export class Character {
     private handleDragEnd(): void {
         this.isDragging = false;
         this.lastDragEvent = null;
-    }
-
-    public destroy(): void {
-        if (this.animationFrameId !== null) {
-            cancelAnimationFrame(this.animationFrameId);
-            this.animationFrameId = null;
-        }
-
-        // Remove event listeners
-        document.removeEventListener('mousemove', this.handleMouseMoveRef);
-        window.removeEventListener('resize', this.onWindowResizeRef);
-        
-        if (this.allowInteract) {
-            this.canvas.removeEventListener('click', this.handleCanvasClickRef);
-            this.canvas.removeEventListener('mousedown', this.handleDragStartRef);
-            document.removeEventListener('mousemove', this.handleDragRef);
-            document.removeEventListener('mouseup', this.handleDragEndRef);
-            this.canvas.removeEventListener('touchstart', this.handleDragStartRef);
-            document.removeEventListener('touchmove', this.handleDragRef);
-            document.removeEventListener('touchend', this.handleDragEndRef);
-        }
-
-        // Clean up Spine resources
-        if (this.character) {
-            this.character.state.clearTracks();
-            this.character.state.clearListeners();
-        }
-        
-        // Delete WebGL resources
-        this.releaseWebGLResources();
-        
-        // Clear session storage
-        sessionStorage.removeItem('arkpets-character-' + this.canvas.id);
-        
-        // Clear asset manager
-        this.assetManager.removeAll();
-        this.assetManager.dispose();
-
-        // Remove canvas
-        this.canvas.remove();
     }
 
     public getAnimationNames(): string[] {
