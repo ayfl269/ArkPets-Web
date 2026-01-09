@@ -139,7 +139,7 @@ export class Character {
         this.allowInteract = allowInteract;
         this.model = initialCharacter;
         this.mvp = new webgl.Matrix4();
-        this.pixelRatio = window.devicePixelRatio ?? 2;
+        this.pixelRatio = Math.max(2, window.devicePixelRatio || 1);
         
         // Initialize event handler references
         this.handleMouseMoveRef = this.handleMouseMove.bind(this);
@@ -423,7 +423,7 @@ export class Character {
 
     private load(): void {
         if (this.assetManager.isLoadingComplete()) {
-            this.character = this.loadCharacter(this.model, 0.3 * 1 * this.pixelRatio);
+            this.character = this.loadCharacter(this.model, 0.3);
 
             if (this.getAnimationNames().indexOf(this.currentAction.animation) === -1) {
                 // If switching from character to vehicle, make sure it's not in `Sleep` or `Sit`
@@ -602,7 +602,8 @@ export class Character {
         this.gl.clearColor(0, 0, 0, 0);
         this.gl.clear(this.gl.COLOR_BUFFER_BIT);
         
-        this.character.skeleton.scaleX = this.currentAction.direction === "left" ? -1 : 1;
+        this.character.skeleton.scaleX = (this.currentAction.direction === "left" ? -1 : 1) * this.pixelRatio;
+        this.character.skeleton.scaleY = this.pixelRatio;
 
         this.character.state.update(delta);
         this.character.state.apply(this.character.skeleton);
@@ -670,7 +671,7 @@ export class Character {
 
         this.gl.uniform1i(uTexture, 0); // Use texture unit 0 for spine character
         this.gl.uniform4f(uOutlineColor, 1.0, 1.0, 0.0, 1.0); // yellow
-        this.gl.uniform1f(uOutlineWidth, this.allowInteract && this.isMouseOver ? 2.0 : 0.0); // Show outline only in interactive mode
+        this.gl.uniform1f(uOutlineWidth, this.allowInteract && this.isMouseOver ? 2.0 * this.pixelRatio : 0.0); // Show outline only in interactive mode
         this.gl.uniform2i(uTextureSize, this.canvas.width, this.canvas.height);
         this.gl.uniform1f(uAlpha, (!this.allowInteract && this.isMouseOver) ? 0.3 : 1.0); // Reduce opacity when non-interactive and mouse over
 
@@ -918,6 +919,9 @@ export class Character {
      * Window resize event handler
      */
     private onWindowResize(): void {
+        // Update pixel ratio for zoom/high-res support
+        this.pixelRatio = Math.max(2, window.devicePixelRatio || 1);
+
         // Dynamically adjust canvas size
         this.updateCanvasSize();
         
