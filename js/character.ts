@@ -12,6 +12,8 @@ const MAX_VELOCITY = 1000; // maximum velocity in pixels per second
 const MIN_VELOCITY = 5; // threshold for stopping
 const BOUNCE_DAMPING = 0.7; // energy loss on bounce
 
+const BASE_SKELETON_SCALE = 0.3; // Base scale for the character skeleton
+
 // Screen size breakpoints and corresponding canvas base sizes
 const SCREEN_CONFIG = {
     MOBILE_BREAKPOINT: 480,
@@ -139,7 +141,7 @@ export class Character {
         this.allowInteract = allowInteract;
         this.model = initialCharacter;
         this.mvp = new webgl.Matrix4();
-        this.pixelRatio = Math.max(2, window.devicePixelRatio || 1);
+        this.pixelRatio = this.getPixelRatio();
         
         // Initialize event handler references
         this.handleMouseMoveRef = this.handleMouseMove.bind(this);
@@ -423,7 +425,7 @@ export class Character {
 
     private load(): void {
         if (this.assetManager.isLoadingComplete()) {
-            this.character = this.loadCharacter(this.model, 0.3);
+            this.character = this.loadCharacter(this.model, BASE_SKELETON_SCALE);
 
             if (this.getAnimationNames().indexOf(this.currentAction.animation) === -1) {
                 // If switching from character to vehicle, make sure it's not in `Sleep` or `Sit`
@@ -602,6 +604,9 @@ export class Character {
         this.gl.clearColor(0, 0, 0, 0);
         this.gl.clear(this.gl.COLOR_BUFFER_BIT);
         
+        // Apply the resolution-based scale to the skeleton.
+        // scaleX handles both the pixel ratio for high-res and the direction (flipping).
+        // scaleY handles the pixel ratio for high-res.
         this.character.skeleton.scaleX = (this.currentAction.direction === "left" ? -1 : 1) * this.pixelRatio;
         this.character.skeleton.scaleY = this.pixelRatio;
 
@@ -867,6 +872,13 @@ export class Character {
     }
 
     /**
+     * Get the current pixel ratio, ensuring a minimum of 2 for high-quality rendering.
+     */
+    private getPixelRatio(): number {
+        return Math.max(2, window.devicePixelRatio || 1);
+    }
+
+    /**
      * Update canvas size based on window size and device pixel ratio
      * Implement high-resolution screen adaptation and maintain aspect ratio
      */
@@ -920,7 +932,7 @@ export class Character {
      */
     private onWindowResize(): void {
         // Update pixel ratio for zoom/high-res support
-        this.pixelRatio = Math.max(2, window.devicePixelRatio || 1);
+        this.pixelRatio = this.getPixelRatio();
 
         // Dynamically adjust canvas size
         this.updateCanvasSize();
