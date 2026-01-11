@@ -243,10 +243,12 @@ export class Character {
         this.initFramebuffer();
         
         // Create WebGL objects
-        this.shader = webgl.Shader.newTwoColoredTextured(this.gl);
-        this.batcher = new webgl.PolygonBatcher(this.gl);
-        this.skeletonRenderer = new webgl.SkeletonRenderer(new webgl.ManagedWebGLRenderingContext(this.gl));
-        this.assetManager = new webgl.AssetManager(this.gl);
+        const managedContext = new webgl.ManagedWebGLRenderingContext(this.gl);
+        this.shader = webgl.Shader.newColoredTextured(managedContext);
+        this.batcher = new webgl.PolygonBatcher(managedContext, false);
+        this.skeletonRenderer = new webgl.SkeletonRenderer(managedContext, false);
+        this.skeletonRenderer.premultipliedAlpha = true;
+        this.assetManager = new webgl.AssetManager(managedContext);
     }
 
     private setupEventListeners(onContextMenu: (e: MouseEvent | TouchEvent) => void): void {
@@ -619,7 +621,7 @@ export class Character {
         this.shader.setUniform4x4f(webgl.Shader.MVP_MATRIX, this.mvp.values);
 
         this.batcher.begin(this.shader);
-        this.skeletonRenderer.premultipliedAlpha = false;
+        this.skeletonRenderer.premultipliedAlpha = true;
         this.skeletonRenderer.draw(this.batcher, this.character.skeleton);
         this.batcher.end();
 
